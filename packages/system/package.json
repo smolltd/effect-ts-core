@@ -62,6 +62,8 @@
       "Mutable",
       "NonEmptyArray",
       "Option",
+      "Ord",
+      "Ordering",
       "Promise",
       "Queue",
       "Random",

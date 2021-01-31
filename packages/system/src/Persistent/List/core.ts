@@ -6,6 +6,7 @@ import type { Either } from "../../Either"
 import { identity } from "../../Function"
 import type { Option } from "../../Option"
 import { fromNullable } from "../../Option"
+import type { Ord } from "../../Ord"
 import type { Separated } from "../../Utils"
 
 /**
@@ -3257,8 +3258,6 @@ export function zipWith<A, B, C>(
   return (as) => zipWith_(as, bs, f)
 }
 
-export type Ordering = -1 | 0 | 1
-
 /**
  * Sort the given list by comparing values using the given function.
  * The function receieves two values and should return `-1` if the
@@ -3268,15 +3267,12 @@ export type Ordering = -1 | 0 | 1
  *
  * @complexity O(n * log(n))
  */
-export function sortWith_<A>(
-  l: List<A>,
-  comparator: (a: A, b: A) => Ordering
-): List<A> {
+export function sortWith_<A>(l: List<A>, ord: Ord<A>): List<A> {
   const arr: { idx: number; elm: A }[] = []
   let i = 0
   forEach_(l, (elm) => arr.push({ idx: i++, elm }))
   arr.sort(({ elm: a, idx: i }, { elm: b, idx: j }) => {
-    const c = comparator(a, b)
+    const c = ord.compare(b)(a)
     return c !== 0 ? c : i < j ? -1 : 1
   })
   const newL = emptyPushable<A>()
@@ -3295,10 +3291,8 @@ export function sortWith_<A>(
  *
  * @complexity O(n * log(n))
  */
-export function sortWith<A>(
-  comparator: (a: A, b: A) => Ordering
-): (l: List<A>) => List<A> {
-  return (l) => sortWith_(l, comparator)
+export function sortWith<A>(O: Ord<A>): (l: List<A>) => List<A> {
+  return (l) => sortWith_(l, O)
 }
 
 /**
