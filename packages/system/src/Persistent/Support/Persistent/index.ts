@@ -2,7 +2,7 @@
  * Forked and ported from @frptools/structural
  */
 
-import { throwArgumentError } from "../Errors"
+import { throwArgumentError, throwInvalidOperation } from "../Errors"
 
 /**
  * A mutation context stores contextual information with respect to the temporary mutability of a
@@ -63,7 +63,7 @@ export interface Persistent {
    * substructures should use `asMutable()`, with their owning structure passed in as the joining
    * context.
    */
-  readonly [cloneSym]: (mctx: MutationContext) => Persistent
+  readonly [cloneSym]: (mctx: MutationContext) => this
 }
 
 export type PreferredContext = MutationContext | Persistent | boolean
@@ -291,4 +291,103 @@ export function modifyAsSubordinate<T extends Persistent>(
         "context",
         "The first argument must refer to a mutable object or mutation context"
       )
+}
+
+/**
+ * Returns the second argument as a mutable equal of the first argument (as context owner if the first argument is the
+ * context owner or is immutable, or as subordinate if the first argument also has a subordinate context)
+ */
+export function modifyAsEqual<T extends Persistent>(
+  context: Persistent | MutationContext,
+  value: T
+): T {
+  const mcChild = getMutationContext(value)
+  const mcParent = isMutationContext(context) ? context : getMutationContext(context)
+
+  return isMutableContext(mcParent)
+    ? isRelatedContext(mcChild, mcParent) &&
+      (isSubordinateContext(mcParent) || isPrimaryContext(mcChild))
+      ? value
+      : clone(value, mcParent)
+    : throwArgumentError(
+        "context",
+        "The first argument must refer to a mutable object or mutation context"
+      )
+}
+
+/**
+ * Ensures that the specified child property is a mutable member of the same batch that is currently active for its
+ * parent. If the child is already part of the same mutation batch, it is returned as-is. If not, it is cloned as a
+ * subordinate of the parent's mutation batch, reassigned to the parent and then returned.
+ */
+export function modifyProperty<
+  T extends Persistent & { [N in P]: R },
+  P extends keyof T,
+  R extends Persistent
+>(parent: T, name: P): T[P] {
+  if (isImmutable(parent))
+    return throwInvalidOperation("Cannot modify properties of an immutable object")
+
+  let child = parent[name]
+
+  if (isRelatedContext(getMutationContext(child), getMutationContext(parent)))
+    return child
+
+  parent[name] = child = clone(child, parent)
+
+  return child
+}
+
+/**
+ * Returns a version of the input value that matches the mutability specified by the first argument. If the first
+ * argument is a mutable object, the returned value will be cloned into the same mutation batch with a mutable context
+ * that is subordinate to the batch owner.
+ */
+export function withMutability<T extends Persistent>(
+  pctx: PreferredContext | undefined,
+  value: T
+): T {
+  let mctx: MutationContext
+  if (pctx === void 0) {
+    mctx = Frozen
+  } else if (typeof pctx === "boolean") {
+    if (pctx === isMutable(value)) return value
+    mctx = pctx ? mutable() : Frozen
+  } else if (isMutationContext(pctx)) {
+    if (isRelatedContext(pctx, getMutationContext(value))) return value
+    mctx = pctx
+  } else {
+    if (areContextsRelated(pctx, value)) return value
+    mctx = getSubordinateContext(pctx)
+  }
+  value = value[cloneSym](mctx)
+  return value
+}
+
+/**
+ * Returns a version of the `value` argument that is guaranteed to have the specified mutation
+ * context instance. The `value` argument is cloned only if its mutation context does not match the
+ * `mctx` argument. Note that the exact `mctx` reference is checked; this function does not check if
+ * the contexts are related, or whether or not they're mutable, it simply ensures that the returned
+ * value uses the referenced mutation context instance.
+ */
+export function ensureContext<T extends Persistent>(
+  mctx: MutationContext,
+  value: T
+): T {
+  return getMutationContext(value) === mctx ? value : value[cloneSym](mctx)
+}
+
+export type UpdaterFn<T extends Persistent, U> = (value: T) => U
+
+/**
+ * Allows batches of in-place mutations to be applied to a persistent object. When mutations are
+ * completed, if the input value was already mutable, it is passed to the mutation function as-is,
+ * and returned when the mutation function returns. If the input value was immutable, a mutable copy
+ * is passed to the mutation function, and then frozen before being returned.
+ */
+export function update<T extends Persistent>(mutate: UpdaterFn<T, void>, value: T): T {
+  value = begin(value)
+  mutate(value)
+  return commit(value)
 }

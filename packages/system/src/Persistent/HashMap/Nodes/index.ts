@@ -1,6 +1,8 @@
 import type { Equal } from "../../../Equal"
 import * as IO from "../../../IO"
 import * as O from "../../../Option"
+import type { Persistent } from "../../Support/Persistent"
+import { cloneSym, immutable, mctxSym } from "../../Support/Persistent"
 import { arraySpliceIn, arraySpliceOut, arrayUpdate } from "../Array"
 import { fromBitmap, hashFragment, toBitmap } from "../Bitwise"
 import { MAX_INDEX_NODE, MIN_ARRAY_NODE, SIZE } from "../Config"
@@ -16,7 +18,15 @@ export interface SizeRef {
   value: number
 }
 
-export class Empty<K, V> {
+export class Empty<K, V> implements Persistent {
+  static empty = new Empty<any, any>();
+
+  [mctxSym] = immutable();
+
+  [cloneSym]: () => this = () => {
+    return <this>Empty.empty
+  }
+
   readonly _tag = "Empty"
 
   modify(
@@ -29,7 +39,7 @@ export class Empty<K, V> {
     size: SizeRef
   ): Node<K, V> {
     const v = f(O.none)
-    if (O.isNone(v)) return new Empty()
+    if (O.isNone(v)) return <this>Empty.empty
     ++size.value
     return new LeafNode(edit, hash, key, v)
   }
